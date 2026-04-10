@@ -1,22 +1,28 @@
 # fb-fact-check
 
-Facebook 影片事實查核工具 — 本地 Whisper 語音轉錄 + AI 驅動的 Deep Research 查核方法論。
+Facebook 影片事實查核工具 — 五階段 Deep Research Pipeline。
 
-## 功能
+## 架構
 
-- **影片音訊下載** — 透過 yt-dlp 從 Facebook（及其他平台）下載影片音訊
-- **本地語音轉文字** — 使用 OpenAI Whisper（small 模型），完全離線，無需 API Key
-- **Deep Research 查核方法論** — 參考 Gemini Deep Research 架構設計的迭代查核流程（見 [AGENTS.md](AGENTS.md)）
+基於兩個核心研究：
+- [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) — 主張拆解 + 多階段證據檢索 + 摘要 + 判定
+- [Deep Research 階層架構](https://arxiv.org/abs/2509.06733) (Huawei) — Planner → Coordinator → Executors 迭代搜尋
 
-## 查核方法論亮點
+```
+影片 → 轉錄 → 主張拆解 → 迭代搜尋 → 交叉驗證 → 判定報告
+       Stage1   Stage2      Stage3      Stage4      Stage5
+```
 
-| 特性 | 說明 |
-|------|------|
-| 迭代深度搜尋 | 搜尋 → 閱讀全文 → 反思缺口 → 再搜尋，至少 2 輪 |
-| 多語言搜尋 | 中文 + 英文 + 涉及國家語言（如日文） |
-| 學術來源優先 | PubMed > Google Scholar > 權威媒體 > 一般網頁 |
-| 反爬蟲應對 | PubMed 被擋改走 PMC，論文被擋走 ResearchGate |
-| 交叉驗證 | 關鍵數據至少 2 個獨立來源確認 |
+### 與一般 fact-check 工具的差異
+
+| 特性 | 一般工具 | 本工具 |
+|------|---------|--------|
+| 主張處理 | 整段丟給 LLM | 拆解為子問題，逐一驗證 |
+| 搜尋策略 | 搜一次就下結論 | 迭代搜尋 ≥2 輪 + 反思缺口 |
+| 語言 | 單語 | 多語言（中/英 + 涉及國語言） |
+| 來源 | 不區分 | 學術優先：PubMed > Scholar > 媒體 |
+| 驗證 | 無 | 關鍵數據 ≥2 獨立來源交叉驗證 |
+| 輸出 | 文字回覆 | 結構化 JSON 報告 + 判定等級 |
 
 ## 安裝
 
@@ -24,26 +30,37 @@ Facebook 影片事實查核工具 — 本地 Whisper 語音轉錄 + AI 驅動的
 pip install -r requirements.txt
 ```
 
-需要 Python 3.9+ 和 ffmpeg：
-
+需要 Python 3.10+ 和 ffmpeg：
 ```bash
-# macOS
-brew install ffmpeg
-
 # Ubuntu/Debian
 sudo apt install ffmpeg
+
+# macOS
+brew install ffmpeg
 ```
 
 ## 使用
 
-### 轉錄影片
+### 搭配 AI Agent（推薦）
+
+將 `AGENTS.md` 作為 agent 的指引，搭配具有 web_search + web_fetch 能力的 agent（Kiro CLI、Claude 等）：
+
+```
+@agent 請對這個影片進行事實查核：https://www.facebook.com/share/v/xxxxx
+按照 AGENTS.md 的五階段 pipeline 執行。
+```
+
+### 獨立執行（Stage 1-2）
 
 ```bash
-# 預設使用 small 模型
+# 轉錄 + 主張拆解
 python3 fact_check.py https://www.facebook.com/share/v/xxxxx
 
-# 指定模型（tiny/base/small/medium/large）
+# 指定 Whisper 模型
 python3 fact_check.py https://www.facebook.com/share/v/xxxxx medium
+
+# 直接輸入逐字稿（跳過轉錄）
+python3 fact_check.py --transcript "影片中說的內容..."
 ```
 
 ### 轉錄（含時間軸）
@@ -53,9 +70,9 @@ chmod +x transcribe.sh
 ./transcribe.sh https://www.facebook.com/share/v/xxxxx small
 ```
 
-### 搭配 AI Agent 查核
+## Pipeline 詳細說明
 
-將 `AGENTS.md` 作為 AI agent 的 system prompt 或指引文件，搭配具有 web_search 和 web_fetch 能力的 agent 使用（如 Kiro CLI、Claude 等），即可執行完整的 Deep Research 事實查核流程。
+見 [AGENTS.md](AGENTS.md)
 
 ## Whisper 模型選擇
 
@@ -71,12 +88,18 @@ chmod +x transcribe.sh
 
 ```
 fb-fact-check/
-├── fact_check.py     # 核心轉錄工具（Python）
-├── transcribe.sh     # 轉錄腳本（含時間軸輸出）
-├── AGENTS.md         # Deep Research 查核方法論
-├── requirements.txt  # Python 依賴
+├── fact_check.py      # 五階段 pipeline 核心
+├── transcribe.sh      # 轉錄腳本（含時間軸）
+├── AGENTS.md          # Deep Research 查核方法論 v2
+├── requirements.txt   # Python 依賴
 └── README.md
 ```
+
+## 參考文獻
+
+- Chen et al. "Complex Claim Verification with Evidence Retrieved in the Wild" (2023) — ClaimDecomp pipeline
+- Li et al. "Reinforcement Learning Foundations for Deep Research Systems" (2025) — 階層式 Planner-Coordinator-Executors 架構
+- Miranda et al. "Automated Fact Checking in the News Room" (2019) — BBC 新聞室 agentic fact-checking
 
 ## License
 
