@@ -37,6 +37,30 @@ Follow a "search → read → reflect → re-search" loop, minimum 2 rounds.
 - Include academic source-restricted queries (PubMed, Scholar, PMC)
 - **Important**: Search the same concept with different keyword combinations — "not found" does not mean "does not exist"
 
+#### Search Term Strategy: Use Academic Terminology, Not Video Language
+
+Videos use casual, exaggerated language. Academic papers use precise terminology. You must translate the video's claims into the keywords that would actually appear in a paper.
+
+Examples:
+| Video says | Search with |
+|-----------|-------------|
+| "face deforms 0.3mm per year" | `facial asymmetry measurement mm deviation longitudinal` |
+| "skin repair ability drops 37%" | `melatonin suppression percentage self-luminous devices` |
+| "aging speed 1.5x faster" | `cortisol collagen degradation skin aging quantitative` |
+| "3.2x more likely to be asymmetric" | `sleep position compression wrinkles facial asymmetry quantitative` |
+| "Stanford 12-year study" | `longitudinal study facial attractiveness aging participants` |
+
+The goal is to find the **real research** behind the claim, then compare the **actual numbers** with what the video stated. Often the underlying science is real but the specific numbers are fabricated or exaggerated.
+
+#### Searching for Specific Numbers
+
+When a video cites a precise number (67%, 0.3mm, 43%, 3.2x, 37%, 48%), search for:
+1. The number itself in quotes with related terms
+2. The academic concept without the number (to find what the real data says)
+3. The institution name in its original language
+
+If the real data exists but with different numbers, that's a key finding — it means the video took real science and inflated/fabricated the statistics.
+
 ### 3.2 First Round Search + Full-Text Reading
 
 Execute searches, use web_fetch to read full text of valuable results.
