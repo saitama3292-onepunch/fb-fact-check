@@ -1,58 +1,58 @@
 # Fact-Check Agent Methodology — v2
 
-基於 [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) 五階段 pipeline，
-結合 Gemini Deep Research 的迭代搜尋概念（搜尋→反思→再搜尋）設計。
+Based on the [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) 5-stage pipeline,
+combined with the Gemini Deep Research iterative search concept (search → reflect → re-search).
 
-## Pipeline 架構
+## Pipeline Architecture
 
 ```
-影片 → [Stage 1] 轉錄
-     → [Stage 2] 主張提取 → 主張拆解(子問題)
-     → [Stage 3] 多語言迭代搜尋 (≥2 輪)
-     → [Stage 4] 證據摘要 + 交叉驗證
-     → [Stage 5] 判定 + 報告生成
+Video → [Stage 1] Transcription
+      → [Stage 2] Claim Extraction → Claim Decomposition (sub-questions)
+      → [Stage 3] Multilingual Iterative Search (≥2 rounds)
+      → [Stage 4] Evidence Summarization + Cross-Validation
+      → [Stage 5] Verdict + Report Generation
 ```
 
-## Stage 1: 語音轉錄
+## Stage 1: Speech-to-Text Transcription
 
-使用 `python3 fact_check.py <URL>` 進行本地 Whisper 轉錄。
+Use `python3 fact_check.py <URL>` for local Whisper transcription.
 
-## Stage 2: 主張提取與拆解 (Claim Decomposition)
+## Stage 2: Claim Extraction & Decomposition
 
-這是整個 pipeline 最關鍵的步驟。參考 ClaimDecomp 論文：
+This is the most critical step in the pipeline. Based on the ClaimDecomp paper:
 
-1. **主張提取**：從逐字稿中識別所有可查核的事實性聲明
-   - 只提取可用證據驗證的：數據、因果關係、歷史事件、科學宣稱
-   - 忽略意見、情緒、修辭
-2. **主張拆解**：每個主張拆解為 3-5 個子問題
-   - 涵蓋：事實本身、數據來源、因果邏輯、反面證據
-   - 子問題格式：yes/no 或 wh-question，可獨立搜尋
+1. **Claim Extraction**: Identify all verifiable factual claims from the transcript
+   - Only extract evidence-verifiable statements: data, causal relationships, historical events, scientific claims
+   - Ignore opinions, emotional expressions, rhetorical questions
+2. **Claim Decomposition**: Break each claim into 3-5 independently searchable sub-questions
+   - Cover: the fact itself, data sources, causal logic, potential counter-evidence
+   - Sub-question format: yes/no or wh-questions, independently searchable
 
-## Stage 3: 多輪迭代搜尋 (Iterative Deep Search)
+## Stage 3: Multi-Round Iterative Search (Iterative Deep Search)
 
-採用「搜尋 → 閱讀 → 反思 → 再搜尋」循環，至少 2 輪。
+Follow a "search → read → reflect → re-search" loop, minimum 2 rounds.
 
-### 3.1 查詢生成
-- 每個子問題生成多語言查詢（中文 + 英文 + 涉及國家語言）
-- 加入學術來源限定查詢（PubMed, Scholar, PMC）
-- **重要**：同一個概念要用不同關鍵詞組合搜尋，「搜不到」不等於「不存在」
+### 3.1 Query Generation
+- Generate multilingual queries for each sub-question (source language + English + relevant country languages)
+- Include academic source-restricted queries (PubMed, Scholar, PMC)
+- **Important**: Search the same concept with different keyword combinations — "not found" does not mean "does not exist"
 
-### 3.2 第一輪搜尋 + 全文讀取
+### 3.2 First Round Search + Full-Text Reading
 
-執行搜尋，對有價值的結果用 web_fetch 讀取全文。
+Execute searches, use web_fetch to read full text of valuable results.
 
-#### 全文讀取驗證規則
+#### Full-Text Reading Validation Rules
 
-每次 web_fetch 後，必須檢查以下指標判斷是否成功讀到全文：
+After each web_fetch, check the following indicators to determine if full text was successfully retrieved:
 
-| 指標 | 成功 | 失敗 |
-|------|------|------|
-| 內容長度 | ≥1000 字（學術論文通常 5000-30000 字） | <200 字 |
-| 結構完整性 | 包含 Abstract/Methods/Results/Conclusion 等段落 | 只有標題或導航選單 |
-| 關鍵數據 | 包含你要驗證的具體數字或結論 | 完全沒有相關內容 |
-| 錯誤訊號 | 無 | 包含以下任一字樣 |
+| Indicator | Success | Failure |
+|-----------|---------|---------|
+| Content length | ≥1000 words (academic papers typically 5000-30000 words) | <200 words |
+| Structural completeness | Contains Abstract/Methods/Results/Conclusion sections | Only title or navigation menu |
+| Key data | Contains the specific numbers or conclusions you need to verify | No relevant content at all |
+| Error signals | None | Contains any of the following |
 
-**失敗訊號關鍵詞**（出現任一即判定讀取失敗）：
+**Failure signal keywords** (any one present = fetch failed):
 - `Access Denied`
 - `Cloudflare`
 - `Checking your browser`
@@ -61,116 +61,116 @@
 - `blocked for possible abuse`
 - `Enable JavaScript`
 
-#### 全文讀取 Fallback Chain
+#### Full-Text Reading Fallback Chain
 
-實測結果：學術來源的 web_fetch 成功率約 30%。被擋時依序嘗試：
+Real-world testing shows ~30% success rate for academic sources via web_fetch. When blocked, try in order:
 
 ```
-PubMed 被擋 (常見：Cloudflare)
-  → PMC 全文版 (pmc.ncbi.nlm.nih.gov/articles/PMCxxxxxxx/)
-    → PMC 也被擋 (常見：同樣 Cloudflare)
-      → Semantic Scholar (semanticscholar.org) 搜論文標題
-        → ResearchGate (常見：403)
-          → Google Scholar 搜論文標題，找大學 repository 的公開版
-            → 搜新聞媒體/科普網站對該研究的報導（次級來源）
-              → 完全無法取得全文
+PubMed blocked (common: Cloudflare)
+  → PMC full text (pmc.ncbi.nlm.nih.gov/articles/PMCxxxxxxx/)
+    → PMC also blocked (common: same Cloudflare)
+      → Semantic Scholar (semanticscholar.org) search by paper title
+        → ResearchGate (common: 403)
+          → Google Scholar search by paper title, find university repository open-access version
+            → Search news media / science journalism coverage of the study (secondary source)
+              → Completely unable to retrieve full text
 ```
 
-**完全無法取得全文時的處理**：
-- 如果 web_search 的 snippet 包含足夠資訊（如結論摘要），可作為「僅 snippet」證據使用
-- 標註「無法取得原始全文，判定基於搜尋摘要」
-- 信心自動降為 low
-- 不能僅靠 snippet 給 high confidence 判定
+**When full text is completely unavailable**:
+- If web_search snippets contain sufficient information (e.g., conclusion summary), use as "snippet-only" evidence
+- Label as "unable to retrieve original full text, verdict based on search snippets"
+- Confidence automatically drops to low
+- Cannot give high confidence verdict based solely on snippets
 
-#### 實測成功率參考
+#### Real-World Success Rate Reference
 
-| 來源 | web_fetch 成功率 | 常見失敗原因 |
-|------|-----------------|-------------|
+| Source | web_fetch Success Rate | Common Failure Reason |
+|--------|----------------------|----------------------|
 | PMC/PubMed | ~20% | Cloudflare, Access Denied |
 | ResearchGate | ~10% | 403 Forbidden |
 | MDPI | ~30% | 403 Forbidden |
-| 新聞媒體 (HuffPost, BBC 等) | ~80% | 偶爾 paywall |
-| Medical News Today | ~90% | 極少失敗 |
-| Wikipedia | ~95% | 極少失敗 |
-| Semantic Scholar API | 0% (JSON) | web_fetch 不支援 JSON 回應 |
+| News media (HuffPost, BBC, etc.) | ~80% | Occasional paywall |
+| Medical News Today | ~90% | Rarely fails |
+| Wikipedia | ~95% | Rarely fails |
+| Semantic Scholar API | 0% (JSON) | web_fetch doesn't support JSON responses |
 
-**策略建議**：優先搜尋有引用學術研究的高品質科普/新聞文章（如 Medical News Today、HuffPost Health），這些網站成功率高且通常會引用原始論文的關鍵數據。
+**Strategy recommendation**: Prioritize high-quality science journalism sites that cite academic research (e.g., Medical News Today, HuffPost Health). These have high success rates and typically cite key data from original papers.
 
-### 3.3 反思與缺口分析 (Reflection)
+### 3.3 Reflection & Gap Analysis
 
-每輪搜尋後必須回答：
-1. 哪些子問題已有充分證據？（至少 1 篇全文或 2 個 snippet）
-2. 哪些子問題證據不足？需要什麼追加搜尋？
-3. 搜尋結果是否互相矛盾？
-4. **「搜不到」是因為不存在，還是搜尋詞不夠精確？**
-   - 嘗試不同語言（中/英/日/涉及國語言）
-   - 嘗試不同關鍵詞組合
-   - 嘗試搜機構名稱的原文（如「日本齒科大學」→「日本歯科大学」→「Nippon Dental University」）
+After each search round, answer:
+1. Which sub-questions have sufficient evidence? (at least 1 full text or 2 snippets)
+2. Which sub-questions lack evidence? What additional searches are needed?
+3. Are search results contradictory?
+4. **Is "not found" because it doesn't exist, or because the search terms weren't precise enough?**
+   - Try different languages (source language / English / Japanese / relevant country languages)
+   - Try different keyword combinations
+   - Try searching institution names in their original language (e.g., "Nippon Dental University" in Japanese: "日本歯科大学")
 
-### 3.4 追加搜尋
+### 3.4 Follow-up Search
 
-根據缺口分析生成新查詢，填補知識缺口。至少完成 2 輪搜尋。
+Generate new queries based on gap analysis to fill knowledge gaps. Complete at least 2 rounds.
 
-### 搜尋優先順序
-1. PubMed / PMC（同行評審）
+### Search Priority Order
+1. PubMed / PMC (peer-reviewed)
 2. Google Scholar / Semantic Scholar
-3. 大學官網、政府機構
-4. 權威新聞媒體（Reuters, AP, BBC）
-5. 高品質科普網站（Medical News Today, Healthline）
-6. 一般網頁
+3. University websites, government agencies
+4. Authoritative news media (Reuters, AP, BBC)
+5. High-quality science journalism (Medical News Today, Healthline)
+6. General web pages
 
-## Stage 4: 證據摘要與交叉驗證
+## Stage 4: Evidence Summarization & Cross-Validation
 
 ### 4.1 Claim-Focused Summarization
-- 每篇證據獨立摘要（避免跨文件幻覺）
-- 明確標註立場：支持 / 反駁 / 中立
-- 區分「同行評審研究」vs「網路文章」vs「僅 snippet」
-- 標註證據來源的讀取方式：全文 / snippet / 次級來源
+- Summarize each piece of evidence independently (avoid cross-document hallucination)
+- Explicitly label stance: support / refute / neutral
+- Distinguish "peer-reviewed research" vs "web article" vs "snippet only"
+- Label evidence source reading method: full_text / snippet / secondary_source
 
-### 4.2 交叉驗證
-- 關鍵數據（百分比、倍數、樣本數）至少 2 個獨立來源確認
-- 單一來源數據標註「僅單一來源，可信度待確認」
-- 矛盾證據需額外搜尋釐清
-- **影片中引用的精確數字（如 67%、0.3mm、43%、3.2倍、37%、48%）必須在學術來源中找到原始出處，否則標註為「無法驗證的數字」**
+### 4.2 Cross-Validation
+- Key data (percentages, multipliers, sample sizes) require at least 2 independent sources to confirm
+- Single-source data labeled "single source only, credibility pending confirmation"
+- Contradictory evidence requires additional search to clarify
+- **Precise numbers cited in videos (e.g., 67%, 0.3mm, 43%, 3.2x, 37%, 48%) must be traced to original academic sources, otherwise labeled as "unverifiable number"**
 
-## Stage 5: 判定與報告
+## Stage 5: Verdict & Report
 
-### 判定等級
-| 等級 | 定義 |
-|------|------|
-| true | 完全正確，多個獨立來源確認 |
-| mostly_true | 大致正確，細節有小偏差 |
-| half_true | 部分正確但有重要遺漏或誇大 |
-| mostly_false | 大部分不正確或嚴重誤導 |
-| false | 完全錯誤，證據明確反駁 |
-| unverifiable | 無法找到足夠證據判定 |
+### Verdict Levels
+| Level | Definition |
+|-------|-----------|
+| true | Completely correct, confirmed by multiple independent sources |
+| mostly_true | Generally correct, minor detail discrepancies |
+| half_true | Partially correct but with significant omissions or exaggerations |
+| mostly_false | Mostly incorrect or seriously misleading |
+| false | Completely wrong, clearly refuted by evidence |
+| unverifiable | Insufficient evidence to make a determination |
 
-### 信心等級
-| 等級 | 條件 |
-|------|------|
-| high | ≥3 個獨立來源交叉驗證，至少 1 篇全文讀取成功 |
-| medium | 2 個來源，或僅基於 snippet |
-| low | 單一來源、僅 snippet、或全文讀取全部失敗 |
+### Confidence Levels
+| Level | Criteria |
+|-------|---------|
+| high | ≥3 independent sources cross-validated, at least 1 full-text read successful |
+| medium | 2 sources, or based only on snippets |
+| low | Single source, snippet only, or all full-text reads failed |
 
-### 報告格式
+### Report Format
 ```json
 {
-  "url": "影片網址",
-  "overall_verdict": "整體判定",
+  "url": "video URL",
+  "overall_verdict": "overall verdict",
   "claims": [
     {
-      "claim": "主張文字",
-      "verdict": "判定",
-      "confidence": "信心",
-      "evidence_summary": "證據摘要",
+      "claim": "claim text",
+      "verdict": "verdict",
+      "confidence": "confidence",
+      "evidence_summary": "evidence summary",
       "evidence_quality": "full_text / snippet_only / secondary_source",
-      "sources": ["來源URL"],
+      "sources": ["source URLs"],
       "sub_verdicts": [
-        {"question": "子問題", "answer": "回答", "evidence": "證據"}
+        {"question": "sub-question", "answer": "answer", "evidence": "evidence"}
       ]
     }
   ],
-  "methodology_note": "方法論說明",
+  "methodology_note": "methodology description",
   "fetch_stats": {
     "attempted": 7,
     "success_full_text": 2,
@@ -181,20 +181,20 @@ PubMed 被擋 (常見：Cloudflare)
 }
 ```
 
-## 與 AI Agent 搭配使用
+## Using with AI Agents
 
-### 自動模式（推薦）
-將此文件作為 agent 的 system prompt，搭配具有 web_search + web_fetch 能力的 agent：
+### Automatic Mode (Recommended)
+Use this file as the agent's system prompt, paired with an agent that has web_search + web_fetch capabilities:
 
 ```
-@agent 請對這個影片進行事實查核：<URL>
-按照 AGENTS.md 的五階段 pipeline 執行完整查核。
+@agent Please fact-check this video: <URL>
+Follow the 5-stage pipeline in AGENTS.md.
 ```
 
-### 半自動模式
+### Semi-Automatic Mode
 ```bash
-# Step 1-2: 本地轉錄 + 主張拆解
+# Step 1-2: Local transcription + claim decomposition
 python3 fact_check.py <URL>
 
-# Step 3-5: 將輸出交給 agent 繼續搜尋和判定
+# Step 3-5: Hand off output to agent for search and verdict
 ```

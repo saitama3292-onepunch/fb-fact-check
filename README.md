@@ -1,36 +1,36 @@
 # fb-fact-check
 
-Facebook 影片事實查核工具 — 五階段 Deep Research Pipeline。
+Video fact-checking tool — 5-stage Deep Research Pipeline.
 
-## 架構
+## Architecture
 
-基於兩個核心研究：
-- [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) — 主張拆解 + 多階段證據檢索 + 摘要 + 判定
-- Gemini Deep Research 概念 — 迭代式搜尋→反思→再搜尋循環
+Based on two core references:
+- [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) — Claim decomposition + multi-stage evidence retrieval + summarization + verdict
+- Gemini Deep Research concept — Iterative search → reflect → re-search loop
 
 ```
-影片 → 轉錄 → 主張拆解 → 迭代搜尋 → 交叉驗證 → 判定報告
-       Stage1   Stage2      Stage3      Stage4      Stage5
+Video → Transcribe → Claim Decomposition → Iterative Search → Cross-Validation → Verdict Report
+        Stage 1       Stage 2               Stage 3            Stage 4            Stage 5
 ```
 
-### 與一般 fact-check 工具的差異
+### How This Differs from Typical Fact-Check Tools
 
-| 特性 | 一般工具 | 本工具 |
-|------|---------|--------|
-| 主張處理 | 整段丟給 LLM | 拆解為子問題，逐一驗證 |
-| 搜尋策略 | 搜一次就下結論 | 迭代搜尋 ≥2 輪 + 反思缺口 |
-| 語言 | 單語 | 多語言（中/英 + 涉及國語言） |
-| 來源 | 不區分 | 學術優先：PubMed > Scholar > 媒體 |
-| 驗證 | 無 | 關鍵數據 ≥2 獨立來源交叉驗證 |
-| 輸出 | 文字回覆 | 結構化 JSON 報告 + 判定等級 |
+| Feature | Typical Tools | This Tool |
+|---------|--------------|-----------|
+| Claim handling | Feed entire text to LLM | Decompose into sub-questions, verify each |
+| Search strategy | Search once, conclude | Iterative search ≥2 rounds + gap reflection |
+| Language | Monolingual | Multilingual (source language + English + relevant country languages) |
+| Sources | No distinction | Academic-first: PubMed > Scholar > News media |
+| Verification | None | Key data ≥2 independent sources cross-validated |
+| Output | Text reply | Structured JSON report + verdict levels |
 
-## 安裝
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-需要 Python 3.10+ 和 ffmpeg：
+Requires Python 3.10+ and ffmpeg:
 ```bash
 # Ubuntu/Debian
 sudo apt install ffmpeg
@@ -39,67 +39,67 @@ sudo apt install ffmpeg
 brew install ffmpeg
 ```
 
-## 使用
+## Usage
 
-### 搭配 AI Agent（推薦）
+### With AI Agent (Recommended)
 
-將 `AGENTS.md` 作為 agent 的指引，搭配具有 web_search + web_fetch 能力的 agent（Kiro CLI、Claude 等）：
+Use `AGENTS.md` as the agent's methodology guide, paired with an agent that has web_search + web_fetch capabilities (Kiro CLI, Claude, etc.):
 
 ```
-@agent 請對這個影片進行事實查核：https://www.facebook.com/share/v/xxxxx
-按照 AGENTS.md 的五階段 pipeline 執行。
+@agent Please fact-check this video: https://www.facebook.com/share/v/xxxxx
+Follow the 5-stage pipeline in AGENTS.md.
 ```
 
-### 獨立執行（Stage 1-2）
+### Standalone (Stage 1-2)
 
 ```bash
-# 轉錄 + 主張拆解
+# Transcribe + claim decomposition
 python3 fact_check.py https://www.facebook.com/share/v/xxxxx
 
-# 指定 Whisper 模型
+# Specify Whisper model
 python3 fact_check.py https://www.facebook.com/share/v/xxxxx medium
 
-# 直接輸入逐字稿（跳過轉錄）
-python3 fact_check.py --transcript "影片中說的內容..."
+# Direct transcript input (skip transcription)
+python3 fact_check.py --transcript "Content from the video..."
 ```
 
-### 轉錄（含時間軸）
+### Transcription (with timestamps)
 
 ```bash
 chmod +x transcribe.sh
 ./transcribe.sh https://www.facebook.com/share/v/xxxxx small
 ```
 
-## Pipeline 詳細說明
+## Pipeline Details
 
-見 [AGENTS.md](AGENTS.md)
+See [AGENTS.md](AGENTS.md)
 
-## Whisper 模型選擇
+## Whisper Model Selection
 
-| 模型 | 大小 | 最低 RAM | 中文品質 | 速度 |
-|------|------|---------|---------|------|
-| tiny | 39 MB | 1 GB | ⭐ | 最快 |
-| base | 139 MB | 1 GB | ⭐⭐ | 快 |
-| small | 461 MB | 2 GB | ⭐⭐⭐ | 中等 |
-| medium | 1.5 GB | 5 GB | ⭐⭐⭐⭐ | 慢 |
-| large | 2.9 GB | 10 GB | ⭐⭐⭐⭐⭐ | 最慢 |
+| Model | Size | Min RAM | Quality | Speed |
+|-------|------|---------|---------|-------|
+| tiny | 39 MB | 1 GB | ⭐ | Fastest |
+| base | 139 MB | 1 GB | ⭐⭐ | Fast |
+| small | 461 MB | 2 GB | ⭐⭐⭐ | Medium |
+| medium | 1.5 GB | 5 GB | ⭐⭐⭐⭐ | Slow |
+| large | 2.9 GB | 10 GB | ⭐⭐⭐⭐⭐ | Slowest |
 
-## 專案結構
+## Project Structure
 
 ```
 fb-fact-check/
-├── fact_check.py      # 五階段 pipeline 核心
-├── transcribe.sh      # 轉錄腳本（含時間軸）
-├── AGENTS.md          # Deep Research 查核方法論 v2
-├── requirements.txt   # Python 依賴
+├── fact_check.py      # 5-stage pipeline core
+├── transcribe.sh      # Transcription script (with timestamps)
+├── AGENTS.md          # Deep Research fact-check methodology v2
+├── requirements.txt   # Python dependencies
 └── README.md
 ```
 
-## 參考文獻
+## References
 
 - Chen et al. "Complex Claim Verification with Evidence Retrieved in the Wild" (2023) — ClaimDecomp pipeline
-- Google Gemini Deep Research — 迭代搜尋→反思→再搜尋的產品概念
-- Miranda et al. "Automated Fact Checking in the News Room" (2019) — BBC 新聞室 agentic fact-checking
+- Google Gemini Deep Research — Iterative search → reflect → re-search product concept
+- Miranda et al. "Automated Fact Checking in the News Room" (2019) — BBC newsroom agentic fact-checking
 
 ## License
 
