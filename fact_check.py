@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """FB 影片事實查核 Pipeline — 五階段架構
 
-基於 ClaimDecomp (UT Austin) + Deep Research 階層式架構：
+基於 ClaimDecomp (UT Austin) + Gemini Deep Research 迭代搜尋概念：
   1. 轉錄 (Whisper)
   2. 主張提取與拆解 (Claim Decomposition)
   3. 多輪迭代搜尋 (Iterative Deep Search)
@@ -230,8 +230,9 @@ def generate_report(url: str, transcript: str,
         overall_verdict=overall,
         methodology_note=(
             "採用 ClaimDecomp 五階段 pipeline：主張拆解 → 多語言迭代搜尋(≥2輪) → "
-            "全文讀取 → 交叉驗證(≥2獨立來源) → 判定。"
+            "全文讀取(含 fallback chain) → 交叉驗證(≥2獨立來源) → 判定。"
             "學術來源優先：PubMed > Scholar > 權威媒體 > 一般網頁。"
+            "無法取得全文的關鍵判定自動降為 low confidence。"
         ),
     )
 

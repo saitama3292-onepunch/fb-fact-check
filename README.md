@@ -6,7 +6,7 @@ Facebook 影片事實查核工具 — 五階段 Deep Research Pipeline。
 
 基於兩個核心研究：
 - [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) — 主張拆解 + 多階段證據檢索 + 摘要 + 判定
-- [Deep Research 階層架構](https://arxiv.org/abs/2509.06733) (Huawei) — Planner → Coordinator → Executors 迭代搜尋
+- Gemini Deep Research 概念 — 迭代式搜尋→反思→再搜尋循環
 
 ```
 影片 → 轉錄 → 主張拆解 → 迭代搜尋 → 交叉驗證 → 判定報告
@@ -98,7 +98,7 @@ fb-fact-check/
 ## 參考文獻
 
 - Chen et al. "Complex Claim Verification with Evidence Retrieved in the Wild" (2023) — ClaimDecomp pipeline
-- Li et al. "Reinforcement Learning Foundations for Deep Research Systems" (2025) — 階層式 Planner-Coordinator-Executors 架構
+- Google Gemini Deep Research — 迭代搜尋→反思→再搜尋的產品概念
 - Miranda et al. "Automated Fact Checking in the News Room" (2019) — BBC 新聞室 agentic fact-checking
 
 ## License
