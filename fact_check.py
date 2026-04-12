@@ -30,12 +30,55 @@ def download_audio(url: str) -> str:
     raise FileNotFoundError("Download failed, audio file not found")
 
 
-# ── Stage 1: Speech-to-Text ──
+# ── Stage 1: Speech-to-Text (Groq Whisper API — free, fast, no local GPU needed) ──
 
-def transcribe(path: str, model_name: str = "small") -> str:
-    import whisper
-    model = whisper.load_model(model_name)
-    return model.transcribe(path)["text"]
+def transcribe(path: str, model_name: str = "whisper-large-v3-turbo") -> str:
+    """Transcribe audio using Groq's free Whisper API.
+    Requires GROQ_API_KEY env var. Get one free at https://console.groq.com/keys
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set. Get a free key at https://console.groq.com/keys")
+
+    # Groq accepts up to 25MB; preprocess large files
+    file_size = os.path.getsize(path)
+    if file_size > 24 * 1024 * 1024:
+        compressed = path + ".flac"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", path, "-ar", "16000", "-ac", "1", "-c:a", "flac", compressed],
+            check=True, capture_output=True,
+        )
+        path = compressed
+
+    import urllib.request
+    boundary = "----FormBoundary7MA4YWxkTrZu0gW"
+    with open(path, "rb") as f:
+        file_data = f.read()
+    filename = os.path.basename(path)
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: application/octet-stream\r\n\r\n"
+    ).encode() + file_data + (
+        f"\r\n--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="model"\r\n\r\n'
+        f"{model_name}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="response_format"\r\n\r\n'
+        f"text\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/audio/transcriptions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return resp.read().decode("utf-8").strip()
 
 
 # ── Data Models ──
@@ -273,7 +316,8 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python3 fact_check.py <video_url> [whisper_model]")
         print("       python3 fact_check.py --transcript <transcript_text>")
-        print("\nModel options: tiny, base, small (default), medium, large")
+        print("\nGroq Whisper models: whisper-large-v3-turbo (default, fast), whisper-large-v3 (best accuracy)")
+        print("Requires GROQ_API_KEY env var (free at https://console.groq.com/keys)")
         print("\n5-Stage Pipeline:")
         print("  1. Transcribe → 2. Decompose Claims → 3. Iterative Search → 4. Cross-Validate → 5. Verdict Report")
         sys.exit(1)
@@ -282,11 +326,11 @@ def main():
         transcript = " ".join(sys.argv[2:])
     else:
         url = sys.argv[1]
-        model_name = sys.argv[2] if len(sys.argv) > 2 else "small"
+        model_name = sys.argv[2] if len(sys.argv) > 2 else "whisper-large-v3-turbo"
         print("📥 Stage 0: Downloading video audio...")
         audio = download_audio(url)
         print(f"  ✓ {audio}")
-        print(f"🎙️ Stage 1: Transcribing (Whisper {model_name})...")
+        print(f"🎙️ Stage 1: Transcribing (Groq Whisper: {model_name})...")
         transcript = transcribe(audio, model_name)
         print(f"  ✓ Transcription complete ({len(transcript)} chars)")
 

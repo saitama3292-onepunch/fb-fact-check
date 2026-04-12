@@ -1,12 +1,20 @@
-# Fact-Check Agent Methodology — v2
+# Fact-Check Agent Methodology — v3
 
 Based on the [ClaimDecomp](https://arxiv.org/abs/2305.11859) (UT Austin) 5-stage pipeline,
 combined with the Gemini Deep Research iterative search concept (search → reflect → re-search).
 
+## v2 → v3 Changes
+
+- **Transcription**: Replaced local Whisper with Groq Whisper API (free, no GPU needed, `whisper-large-v3-turbo`)
+- **Fallback Chain**: Added Europe PMC REST API as #1 fallback after PMC is blocked (before Semantic Scholar)
+- **Search Priority**: Europe PMC promoted to #1 (was PubMed/PMC)
+- **paper_fetch.py**: Added 3 new functions (`search_europepmc`, `fetch_europepmc_by_pmid`, `fetch_europepmc_fulltext`) and 3 CLI modes (`europepmc`, `epmc-pmid`, `epmc-fulltext`)
+- **Dependencies**: Removed `openai-whisper` (no longer needed)
+
 ## Pipeline Architecture
 
 ```
-Video → [Stage 1] Transcription
+Video → [Stage 1] Transcription (Groq Whisper API)
       → [Stage 2] Claim Extraction → Claim Decomposition (sub-questions)
       → [Stage 3] Multilingual Iterative Search (≥2 rounds)
       → [Stage 4] Evidence Summarization + Cross-Validation
@@ -15,7 +23,10 @@ Video → [Stage 1] Transcription
 
 ## Stage 1: Speech-to-Text Transcription
 
-Use `python3 fact_check.py <URL>` for local Whisper transcription.
+Use `python3 fact_check.py <URL>` — calls Groq Whisper API (requires `GROQ_API_KEY` env var).
+Get a free key at https://console.groq.com/keys
+
+Models: `whisper-large-v3-turbo` (default, fast) or `whisper-large-v3` (best accuracy).
 
 ## Stage 2: Claim Extraction & Decomposition
 
@@ -34,7 +45,7 @@ Follow a "search → read → reflect → re-search" loop, minimum 2 rounds.
 
 ### 3.1 Query Generation
 - Generate multilingual queries for each sub-question (source language + English + relevant country languages)
-- Include academic source-restricted queries (PubMed, Scholar, PMC)
+- Include academic source-restricted queries (Europe PMC, PubMed, Scholar, PMC)
 - **Important**: Search the same concept with different keyword combinations — "not found" does not mean "does not exist"
 
 #### Search Term Strategy: Use Academic Terminology, Not Video Language
@@ -93,11 +104,12 @@ Real-world testing shows ~30% success rate for academic sources via web_fetch. W
 PubMed blocked (common: Cloudflare)
   → PMC full text (pmc.ncbi.nlm.nih.gov/articles/PMCxxxxxxx/)
     → PMC also blocked (common: same Cloudflare)
-      → Semantic Scholar (semanticscholar.org) search by paper title
-        → ResearchGate (common: 403)
-          → Google Scholar search by paper title, find university repository open-access version
-            → Search news media / science journalism coverage of the study (secondary source)
-              → Completely unable to retrieve full text
+      → Europe PMC REST API (python3 paper_fetch.py epmc-fulltext PMCxxxxxxx)  ← NEW in v3
+        → Semantic Scholar (semanticscholar.org) search by paper title
+          → ResearchGate (common: 403)
+            → Google Scholar search by paper title, find university repository open-access version
+              → Search news media / science journalism coverage of the study (secondary source)
+                → Completely unable to retrieve full text
 ```
 
 **When full text is completely unavailable**:
@@ -106,10 +118,19 @@ PubMed blocked (common: Cloudflare)
 - Confidence automatically drops to low
 - Cannot give high confidence verdict based solely on snippets
 
+#### Europe PMC REST API Endpoints
+
+| Endpoint | CLI Command | Description |
+|----------|-------------|-------------|
+| search | `python3 paper_fetch.py europepmc "query"` | Keyword search, returns JSON (title, abstract, PMID, PMCID, DOI) |
+| PMID query | `python3 paper_fetch.py epmc-pmid 31263089` | Lookup specific paper by PMID via `EXT_ID:{pmid}+SRC:MED` |
+| fullTextXML | `python3 paper_fetch.py epmc-fulltext PMC6611068` | Full paper XML by PMCID |
+
 #### Real-World Success Rate Reference
 
 | Source | web_fetch Success Rate | Common Failure Reason |
 |--------|----------------------|----------------------|
+| Europe PMC REST API | ~100% | No auth required, JSON/XML responses | 
 | PMC/PubMed | ~20% | Cloudflare, Access Denied |
 | ResearchGate | ~10% | 403 Forbidden |
 | MDPI | ~30% | 403 Forbidden |
@@ -118,7 +139,7 @@ PubMed blocked (common: Cloudflare)
 | Wikipedia | ~95% | Rarely fails |
 | Semantic Scholar API | 0% (JSON) | web_fetch doesn't support JSON responses |
 
-**Strategy recommendation**: Prioritize high-quality science journalism sites that cite academic research (e.g., Medical News Today, HuffPost Health). These have high success rates and typically cite key data from original papers.
+**Strategy recommendation**: Use Europe PMC REST API as the primary academic source — it has ~100% success rate and provides abstracts, metadata, and full-text XML for open-access papers. Fall back to science journalism sites for non-OA papers.
 
 ### 3.3 Reflection & Gap Analysis
 
@@ -136,12 +157,13 @@ After each search round, answer:
 Generate new queries based on gap analysis to fill knowledge gaps. Complete at least 2 rounds.
 
 ### Search Priority Order
-1. PubMed / PMC (peer-reviewed)
-2. Google Scholar / Semantic Scholar
-3. University websites, government agencies
-4. Authoritative news media (Reuters, AP, BBC)
-5. High-quality science journalism (Medical News Today, Healthline)
-6. General web pages
+1. Europe PMC REST API (peer-reviewed, ~100% success rate)
+2. PubMed / PMC (peer-reviewed, but often blocked)
+3. Google Scholar / Semantic Scholar
+4. University websites, government agencies
+5. Authoritative news media (Reuters, AP, BBC)
+6. High-quality science journalism (Medical News Today, Healthline)
+7. General web pages
 
 ## Stage 4: Evidence Summarization & Cross-Validation
 

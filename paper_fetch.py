@@ -16,11 +16,21 @@ Usage:
 
     # Search J-STAGE (Japanese academic papers)
     python3 paper_fetch.py jstage "片側咀嚼 顔面非対称"
+
+    # Search Europe PMC (keyword search)
+    python3 paper_fetch.py europepmc "facial asymmetry sleep position"
+
+    # Query Europe PMC by PMID
+    python3 paper_fetch.py epmc-pmid 31263089
+
+    # Fetch full-text XML from Europe PMC by PMCID
+    python3 paper_fetch.py epmc-fulltext PMC6611068
 """
 
 import sys, os, json, tempfile, subprocess, urllib.request, urllib.parse
 
 CONTACT_EMAIL = "factcheck@example.com"  # Required by Unpaywall API
+EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
 
 def fetch_by_doi(doi: str) -> dict:
@@ -30,7 +40,6 @@ def fetch_by_doi(doi: str) -> dict:
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = json.loads(resp.read())
         title = data.get("title", "")
-        # Find best open-access PDF
         best = data.get("best_oa_location") or {}
         pdf_url = best.get("url_for_pdf") or best.get("url")
         return {"title": title, "doi": doi, "pdf_url": pdf_url,
@@ -77,9 +86,7 @@ def search_jstage(query: str, limit: int = 5) -> list[dict]:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "factcheck/1.0"})
         with urllib.request.urlopen(req, timeout=15) as resp:
-            # J-STAGE returns XML
             content = resp.read().decode("utf-8")
-        # Simple XML parsing for titles and links
         import re
         entries = re.findall(r"<entry>(.*?)</entry>", content, re.DOTALL)
         results = []
@@ -95,6 +102,79 @@ def search_jstage(query: str, limit: int = 5) -> list[dict]:
         return results
     except Exception as e:
         return [{"error": str(e)}]
+
+
+# ── Europe PMC REST API ──
+
+def search_europepmc(query: str, limit: int = 5) -> list[dict]:
+    """Search Europe PMC REST API by keyword. Returns title, abstract, PMID, PMCID, DOI."""
+    params = urllib.parse.urlencode({
+        "query": query, "format": "json", "pageSize": limit, "resultType": "core"
+    })
+    url = f"{EUROPEPMC_BASE}/search?{params}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "factcheck/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        results = []
+        for r in data.get("resultList", {}).get("result", []):
+            results.append({
+                "title": r.get("title", ""),
+                "abstract": (r.get("abstractText") or "")[:300],
+                "pmid": r.get("pmid", ""),
+                "pmcid": r.get("pmcid", ""),
+                "doi": r.get("doi", ""),
+                "year": r.get("pubYear", ""),
+                "source": r.get("source", ""),
+            })
+        return results
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+def fetch_europepmc_by_pmid(pmid: str) -> dict:
+    """Query Europe PMC for a specific paper by PMID using EXT_ID:{pmid}+SRC:MED."""
+    query = f"EXT_ID:{pmid} SRC:MED"
+    params = urllib.parse.urlencode({
+        "query": query, "format": "json", "resultType": "core"
+    })
+    url = f"{EUROPEPMC_BASE}/search?{params}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "factcheck/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        results = data.get("resultList", {}).get("result", [])
+        if not results:
+            return {"error": f"PMID {pmid} not found"}
+        r = results[0]
+        return {
+            "title": r.get("title", ""),
+            "abstract": r.get("abstractText", ""),
+            "pmid": r.get("pmid", ""),
+            "pmcid": r.get("pmcid", ""),
+            "doi": r.get("doi", ""),
+            "year": r.get("pubYear", ""),
+            "authors": r.get("authorString", ""),
+            "journal": r.get("journalTitle", ""),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def fetch_europepmc_fulltext(pmcid: str) -> str:
+    """Fetch full-text XML from Europe PMC by PMCID."""
+    if not pmcid.startswith("PMC"):
+        pmcid = f"PMC{pmcid}"
+    url = f"{EUROPEPMC_BASE}/{pmcid}/fullTextXML"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "factcheck/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            xml = resp.read().decode("utf-8")
+        if len(xml) < 100:
+            return f"[No full text available for {pmcid}]"
+        return xml
+    except Exception as e:
+        return f"[Error fetching {pmcid}: {e}]"
 
 
 def download_and_extract_pdf(url: str) -> str:
@@ -172,11 +252,40 @@ def main():
             print(f"     URL: {r.get('url')} | DOI: {r.get('doi')}")
             print()
 
+    elif mode == "europepmc":
+        print(f"🔍 Searching Europe PMC: {query}")
+        results = search_europepmc(query)
+        for r in results:
+            pmcid = r.get("pmcid", "")
+            tag = f"[{pmcid}]" if pmcid else "[no PMC]"
+            print(f"  {tag} [{r.get('year')}] {r.get('title')}")
+            print(f"     PMID: {r.get('pmid')} | DOI: {r.get('doi')}")
+            if r.get("abstract"):
+                print(f"     Abstract: {r['abstract'][:150]}...")
+            print()
+
+    elif mode == "epmc-pmid":
+        print(f"🔍 Europe PMC lookup PMID: {query}")
+        info = fetch_europepmc_by_pmid(query)
+        print(json.dumps(info, indent=2, ensure_ascii=False))
+
+    elif mode == "epmc-fulltext":
+        print(f"📄 Fetching full-text XML from Europe PMC: {query}")
+        xml = fetch_europepmc_fulltext(query)
+        out = os.path.join(tempfile.gettempdir(), "epmc_fulltext.xml")
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(xml)
+        print(f"  Saved {len(xml)} chars to {out}")
+        # Show a preview (strip XML tags for readability)
+        import re
+        text = re.sub(r"<[^>]+>", " ", xml)
+        text = re.sub(r"\s+", " ", text).strip()
+        print(f"\n  Preview (first 500 chars):\n{text[:500]}")
+
     elif mode == "url":
         print(f"📄 Downloading PDF: {query}")
         text = download_and_extract_pdf(query)
         print(f"  Extracted {len(text)} chars")
-        # Search for key terms if provided via stdin
         out = os.path.join(tempfile.gettempdir(), "paper_text.txt")
         with open(out, "w") as f:
             f.write(text)
